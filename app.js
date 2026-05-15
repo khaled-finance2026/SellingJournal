@@ -467,7 +467,7 @@ function showUpgradeModal() {
         </button>`;
       } else {
         const shopName = encodeURIComponent(SESSION?.shop_name||'تاجر');
-        return `<a href="https://wa.me/970591234567?text=أريد الاشتراك — ${shopName}" target="_blank"
+        return `<a href="https://wa.me/970599304202?text=أريد الاشتراك — ${shopName}" target="_blank"
           style="display:block;text-align:center;padding:14px;background:linear-gradient(135deg,#065f46,#10b981);
           border-radius:12px;color:#fff;font-size:16px;font-weight:800;text-decoration:none;margin-bottom:8px">
           📲 اشترك الآن عبر واتساب
@@ -720,7 +720,7 @@ function openContactRequest(type){
       <button class="btn" style="flex:1;background:var(--bg3);color:var(--txt);border:none;border-radius:10px;padding:13px;font-size:16px;cursor:pointer" onclick="closeModal('m-contact')">إلغاء</button>
       <button class="btn" style="flex:2;background:linear-gradient(135deg,var(--pri),#60a5fa);color:#fff;border:none;border-radius:10px;padding:13px;font-size:16px;font-weight:700;cursor:pointer" onclick="submitContactRequest('${type}')">إرسال الطلب</button>
     </div>
-    <a href="https://wa.me/970591234567?text=${encodeURIComponent(info.title+' — '+(SESSION?.name||'تاجر'))}" target="_blank"
+    <a href="https://wa.me/970599304202?text=${encodeURIComponent(info.title+' — '+(SESSION?.name||'تاجر'))}" target="_blank"
       style="display:block;text-align:center;margin-top:12px;padding:12px;background:rgba(37,211,102,.12);border:1.5px solid rgba(37,211,102,.3);border-radius:10px;color:#25d366;font-size:15px;font-weight:700;text-decoration:none">
       📲 أو تواصل واتساب مباشرة</a>`;
   openModal('m-contact');
@@ -1229,6 +1229,7 @@ async function init() {
     checkLongPending();
     setInterval(checkLongPending, 30 * 60 * 1000);
     setTimeout(initGlobalMic, 500);
+    setTimeout(initLockSystem, 1000);
 
   } catch(e) {
     console.warn('init error', e);
@@ -1669,7 +1670,28 @@ async function submitNewCustomer() {
   await renderCustomers();
   await populateCustomerSelect();
 
-  // مزامنة إذا يوجد نت
+  // فتح واتساب برسالة ترحيبية للزبون
+  if (phone) {
+    const shopName = SESSION.shop_name || SESSION.name || 'المتجر';
+    const waPhone  = phone.replace(/^0/, '970').replace(/\D/g,'');
+    const merchantWa = (SESSION.whatsapp_phone || SESSION.phone || '').replace(/^0/, '970').replace(/\D/g,'');
+    const replyLink  = 'https://wa.me/' + merchantWa + '?text=' + encodeURIComponent('اسمي كما في المحفظة/البنك: ');
+    const msg = encodeURIComponent(
+      'مرحباً،\n' +
+      'هذا محل ' + shopName + '.\n\n' +
+      'سجّلناك في نظامنا بـ:\n' +
+      '👤 الاسم: ' + name + '\n' +
+      '📱 الهاتف: ' + phone + '\n\n' +
+      '📌 وصول هذه الرسالة = رقم هاتفك صحيح ✓\n\n' +
+      'الاسم سيُستخدم لمطابقة دفعاتك تلقائياً.\n' +
+      'إذا كان اسمك في المحفظة/البنك مختلفاً:\n' +
+      '👇 اضغط هنا وعدّل اسمك كما هو في المحفظة أو البنك:\n' +
+      replyLink
+    );
+    const send = confirm('هل تريد إرسال رسالة ترحيبية للزبون ' + name + ' على واتساب؟');
+    if (send) window.open('https://wa.me/' + waPhone + '?text=' + msg, '_blank');
+  }
+
   if (navigator.onLine) doSync();
   else getPendingCount().then(n => updateSyncBar('pending', n));
 }
@@ -1683,16 +1705,29 @@ async function submitDebt() {
     desc: r.desc, unit: r.unit||'', qty: r.qty, price: r.price
   })) : null;
 
-  const custId = document.getElementById('add-cust').value;
-  const phone  = document.getElementById('add-phone').value.trim();
-  const amount = parseFloat(document.getElementById('add-amount').value);
-  const desc   = document.getElementById('add-desc').value.trim();
-  const err    = document.getElementById('add-err');
+  const custId   = document.getElementById('add-cust').value;
+  const custName = document.getElementById('add-cust-search').value.trim();
+  const phone    = document.getElementById('add-phone').value.trim();
+  const amount   = parseFloat(document.getElementById('add-amount').value);
+  const desc     = document.getElementById('add-desc').value.trim();
+  const err      = document.getElementById('add-err');
 
   if (!custId)       { showErr(err, 'اختر زبوناً'); return; }
   if (!phone)        { showErr(err, 'رقم الهاتف مطلوب'); return; }
   if (phone.replace(/\D/g,'').length < 9) { showErr(err, 'رقم الهاتف قصير جداً'); return; }
   if (!amount || amount <= 0) { showErr(err, 'أدخل مبلغاً صحيحاً'); return; }
+
+  // ── تأكيد قبل الحفظ ──
+  const confirmed = confirm(
+    '📋 مراجعة القيد قبل الحفظ\n\n' +
+    'الزبون:  ' + custName + '\n' +
+    'الهاتف:  ' + phone + '\n' +
+    'المبلغ:  ' + amount.toFixed(2) + ' ' + CUR + '\n' +
+    'البيان:  ' + (desc || 'دين') + '\n' +
+    (hasInvoice ? 'فاتورة مفصلة: نعم\n' : '') +
+    '\nهل البيانات صحيحة؟'
+  );
+  if (!confirmed) return;
 
   const numKey = 'dd_inv_seq_' + SESSION.merchant_id;
   const invoiceNum = parseInt(localStorage.getItem(numKey) || '0') + 1;
@@ -1731,13 +1766,12 @@ async function submitDebt() {
   invType = 'normal';
   updateInvSummary();
 
-  const lastCustId   = custId;
-  const lastCustName = document.getElementById('add-cust-search').value;
-  saveRecentCust(lastCustId, lastCustName);
+  const lastCustId = custId;
+  saveRecentCust(lastCustId, custName);
 
-  const addMore = confirm('✅ تم الحفظ — فاتورة F' + String(invoiceNum).padStart(3,'0') + '\n\nهل تريد إضافة معاملة أخرى لـ ' + lastCustName + '؟');
+  const addMore = confirm('✅ تم الحفظ — فاتورة F' + String(invoiceNum).padStart(3,'0') + '\n\nهل تريد إضافة معاملة أخرى لـ ' + custName + '؟');
   if (addMore) {
-    document.getElementById('add-cust-search').value = lastCustName;
+    document.getElementById('add-cust-search').value = custName;
     document.getElementById('add-cust').value = lastCustId;
     document.getElementById('add-amount').value = '';
     document.getElementById('add-desc').value = '';
@@ -1867,33 +1901,79 @@ async function loadHomeData() {
     return paid > 0;
   }).length;
 
-  document.getElementById('home-stats').innerHTML = `
-    <div class="home-stats-wrap">
-      <div class="stat-main">
-        <div class="stat-main-left">
-          <div class="lbl">الديون المعلقة الآن</div>
-          <div class="val">${pendingAmt.toFixed(2)} <span style="font-size:.45em;opacity:.8">${CUR}</span></div>
-          <div class="sub">${pending.length > 0 ? pending.length + ' دين غير مسدَّد' : 'لا توجد ديون معلقة'}</div>
-        </div>
-        <div class="stat-main-right">📋</div>
-      </div>
-      <div class="stat-mini-row">
-        <div class="stat-mini green">
-          <div class="ic">💰</div>
-          <div>
-            <div class="val" style="color:var(--grn)">${todayAmt.toFixed(2)} ${CUR}</div>
-            <div class="lbl">محصّل اليوم</div>
-          </div>
-        </div>
-        <div class="stat-mini yellow">
-          <div class="ic">👥</div>
-          <div>
-            <div class="val" style="color:${debtorCount > 0 ? 'var(--yel)' : 'var(--txt3)'}">${debtorCount}</div>
-            <div class="lbl">${debtorCount === 0 ? 'لا مديونين' : partialCount > 0 ? `مدين (${partialCount} جزئي)` : 'زبون مدين'}</div>
-          </div>
-        </div>
-      </div>
-    </div>`;
+  // مبيعات اليوم (نقداً + على الحساب)
+  const todaySales = allTx.filter(t =>
+    !t.is_partial_payment &&
+    (t.created_at||'').slice(0,10) === today
+  );
+  const totalSalesToday = todaySales.reduce((s,t) => s + Number(t.amount||0), 0);
+
+  // مدفوع نقداً من مبيعات اليوم
+  const cashFromToday = allTx.filter(t =>
+    t.is_partial_payment &&
+    (t.created_at||'').slice(0,10) === today
+  ).filter(p => {
+    const parent = allTx.find(t => t.id === p.partial_payment_parent_id);
+    return parent && (parent.created_at||'').slice(0,10) === today;
+  }).reduce((s,t) => s + Number(t.amount||0), 0);
+
+  // مدفوع نقداً من مبيعات سابقة
+  const cashFromOld = allTx.filter(t =>
+    t.is_partial_payment &&
+    (t.created_at||'').slice(0,10) === today
+  ).filter(p => {
+    const parent = allTx.find(t => t.id === p.partial_payment_parent_id);
+    return parent && (parent.created_at||'').slice(0,10) !== today;
+  }).reduce((s,t) => s + Number(t.amount||0), 0);
+
+  // ديون جديدة اليوم
+  const newDebtsToday = todaySales
+    .filter(t => t.status === 'غير مدفوع')
+    .reduce((s,t) => s + Number(t.amount||0), 0);
+
+  document.getElementById('home-stats').innerHTML =
+    '<div class="home-stats-wrap">' +
+      '<div class="stat-main">' +
+        '<div class="stat-main-left">' +
+          '<div class="lbl">الديون المعلقة الآن</div>' +
+          '<div class="val">' + pendingAmt.toFixed(2) + ' <span style="font-size:.45em;opacity:.8">' + CUR + '</span></div>' +
+          '<div class="sub">' + (pending.length > 0 ? pending.length + ' دين غير مسدَّد' : 'لا توجد ديون معلقة') + '</div>' +
+        '</div>' +
+        '<div class="stat-main-right">📋</div>' +
+      '</div>' +
+      '<div class="stat-mini-row">' +
+        '<div class="stat-mini blue">' +
+          '<div class="ic">🛒</div>' +
+          '<div>' +
+            '<div class="val" style="color:var(--pri)">' + totalSalesToday.toFixed(2) + ' ' + CUR + '</div>' +
+            '<div class="lbl">مبيعات اليوم</div>' +
+          '</div>' +
+        '</div>' +
+        '<div class="stat-mini red">' +
+          '<div class="ic">📌</div>' +
+          '<div>' +
+            '<div class="val" style="color:var(--red)">' + newDebtsToday.toFixed(2) + ' ' + CUR + '</div>' +
+            '<div class="lbl">ديون جديدة اليوم</div>' +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="stat-mini-row">' +
+        '<div class="stat-mini green">' +
+          '<div class="ic">💵</div>' +
+          '<div>' +
+            '<div class="val" style="color:var(--grn)">' + cashFromToday.toFixed(2) + ' ' + CUR + '</div>' +
+            '<div class="lbl">نقد من مبيعات اليوم</div>' +
+          '</div>' +
+        '</div>' +
+        '<div class="stat-mini yellow">' +
+          '<div class="ic">💰</div>' +
+          '<div>' +
+            '<div class="val" style="color:var(--yel)">' + cashFromOld.toFixed(2) + ' ' + CUR + '</div>' +
+            '<div class="lbl">نقد من ديون سابقة</div>' +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
 
   // آخر 10 ديون
   const latest = pending.sort((a,b) => new Date(b.created_at) - new Date(a.created_at)).slice(0,10);
@@ -2762,8 +2842,35 @@ function filterCustSearch(q) {
   const query = q.trim();
 
   if (!query) {
-    dropdown.style.display = 'none';
-    custInput.value = '';
+    // عند الفتح بدون كتابة — اعرض الكل
+    if (allCustsCache.length === 0) {
+      dropdown.style.display = 'none';
+      custInput.value = '';
+      if (newConfirm) newConfirm.style.display = 'none';
+      return;
+    }
+    dropdown.innerHTML =
+      '<div style="padding:8px 14px;font-size:12px;color:var(--txt3);border-bottom:1px solid var(--brd)">' +
+      'الزبائن المسجلون — ' + allCustsCache.length + ' زبون' +
+      '</div>' +
+      allCustsCache.map(c => {
+        const bal = custBalances[c.id] || 0;
+        return '<div onclick="selectCust(\'' + c.id + '\',\'' +
+          c.name.replace(/'/g, "\\'") + '\',\'' + (c.phone||'') + '\')"' +
+          ' style="padding:12px 16px;cursor:pointer;border-bottom:1px solid var(--brd);' +
+          'display:flex;justify-content:space-between;align-items:center"' +
+          ' onmouseenter="this.style.background=\'var(--bg3)\'"' +
+          ' onmouseleave="this.style.background=\'\'">' +
+          '<div>' +
+            '<div style="font-size:16px;font-weight:800;color:var(--txt)">' + c.name + '</div>' +
+            '<div style="font-size:13px;color:var(--txt3);direction:ltr">' + (c.phone||'بدون رقم') + '</div>' +
+          '</div>' +
+          (bal > 0
+            ? '<div style="font-size:15px;font-weight:900;color:var(--red)">' + bal.toFixed(2) + ' ' + CUR + '</div>'
+            : '<div style="font-size:12px;color:var(--grn);font-weight:700">مسوَّى ✓</div>') +
+          '</div>';
+      }).join('');
+    dropdown.style.display = 'block';
     if (newConfirm) newConfirm.style.display = 'none';
     return;
   }
@@ -2781,9 +2888,11 @@ function filterCustSearch(q) {
       ? '<div style="padding:10px 14px;background:rgba(251,191,36,.12);' +
         'border-bottom:1px solid var(--brd);font-size:13px;color:#92400e;line-height:1.8">' +
         '⚠️ هذا الاسم موجود — للتمييز أضف مثلاً:<br>' +
-        '<span style="font-weight:800">اسم الأب · اللقب · أبو فلان · جارنا · الأشقر · الأستاذ</span>' +
+        '<span style="font-weight:800">اسم الأب · اللقب · أبو فلان · جارنا · الأشقر</span>' +
         '</div>'
-      : '';
+      : '<div style="padding:6px 14px;font-size:12px;color:var(--txt3);border-bottom:1px solid var(--brd)">' +
+        matches.length + ' نتيجة' +
+        '</div>';
 
     dropdown.innerHTML = hint + matches.map(c => {
       const bal = custBalances[c.id] || 0;
@@ -2845,6 +2954,11 @@ async function confirmNewCust() {
   document.getElementById('new-cust-confirm').style.display = 'none';
   document.getElementById('phone-warn-row').style.display = 'block';
   pendingNewCustName = '';
+  // انتقل لحقل الهاتف تلقائياً
+  setTimeout(() => {
+    const ph = document.getElementById('add-phone');
+    if (ph) { ph.focus(); ph.scrollIntoView({behavior:'smooth', block:'center'}); }
+  }, 100);
 }
 
 function cancelNewCust() {
@@ -2994,7 +3108,7 @@ async function devLogin() {
     const res = await fetch(LOGIN_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'login', phone: '+970591234567', pin: '1234' })
+      body: JSON.stringify({ action: 'login', phone: '+970599304202', pin: '1234' })
     });
     const d = await res.json();
     if (d.ok) {
@@ -3008,7 +3122,7 @@ async function devLogin() {
         store_logo:      d.store_logo || '🛠️',
         onboarding_done: true,
         agreed_to_terms: true,
-        phone:           '+970591234567',
+        phone:           '+970599304202',
         saved_at:        Date.now()
       };
       CUR = SESSION.currency;
@@ -3248,6 +3362,81 @@ if ('serviceWorker' in navigator) {
 }
 // شارة المطور للشاشة الأولى
 (function(){ const s = document.querySelector('.screen.active'); if(s) showScreen(s.id); })();
+
+// ================================================================
+// نظام القفل التلقائي — 5 دقائق خمول
+// ================================================================
+let lockInput = '';
+let lockTimer = null;
+const LOCK_TIMEOUT = 5 * 60 * 1000;
+
+function resetLockTimer() {
+  clearTimeout(lockTimer);
+  lockTimer = setTimeout(showLockScreen, LOCK_TIMEOUT);
+}
+
+function initLockSystem() {
+  const pin = localStorage.getItem('dd_lock_pin');
+  if (!pin) {
+    setupLockPin();
+    return;
+  }
+  resetLockTimer();
+  ['touchstart','mousedown','keydown','scroll'].forEach(ev =>
+    document.addEventListener(ev, resetLockTimer, {passive:true})
+  );
+}
+
+function setupLockPin() {
+  let p1 = prompt('أنشئ رقماً سرياً من 4 أرقام للقفل التلقائي:');
+  if (!p1 || p1.length !== 4 || isNaN(p1)) { setupLockPin(); return; }
+  let p2 = prompt('أعد إدخال الرقم السري للتأكيد:');
+  if (p1 !== p2) { alert('الرقمان غير متطابقان، أعد المحاولة'); setupLockPin(); return; }
+  localStorage.setItem('dd_lock_pin', p1);
+  resetLockTimer();
+  ['touchstart','mousedown','keydown','scroll'].forEach(ev =>
+    document.addEventListener(ev, resetLockTimer, {passive:true})
+  );
+}
+
+function showLockScreen() {
+  lockInput = '';
+  updateLockDots();
+  document.getElementById('lock-err').textContent = '';
+  document.getElementById('lock-screen').style.display = 'flex';
+}
+
+function lockKey(d) {
+  if (lockInput.length >= 4) return;
+  lockInput += d;
+  updateLockDots();
+  if (lockInput.length === 4) {
+    setTimeout(() => {
+      const pin = localStorage.getItem('dd_lock_pin');
+      if (lockInput === pin) {
+        document.getElementById('lock-screen').style.display = 'none';
+        lockInput = '';
+        updateLockDots();
+        resetLockTimer();
+      } else {
+        document.getElementById('lock-err').textContent = 'رقم سري خاطئ';
+        lockInput = '';
+        updateLockDots();
+      }
+    }, 150);
+  }
+}
+
+function lockDel() {
+  lockInput = lockInput.slice(0,-1);
+  updateLockDots();
+}
+
+function updateLockDots() {
+  document.querySelectorAll('.pdot').forEach((d,i) =>
+    d.classList.toggle('filled', i < lockInput.length)
+  );
+}
 
 // ================================================================
 // تسجيل مستخدم جديد
